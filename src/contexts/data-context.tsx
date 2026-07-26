@@ -1,5 +1,14 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
-import { mockComplaints, mockDepartments, mockNotifications, mockUsers } from "@/lib/mock-data";
+import {
+  createContext,
+  useContext,
+  useMemo,
+  useState,
+  useEffect,
+  type ReactNode,
+} from "react";
+
+import { mockDepartments, mockUsers } from "@/lib/mock-data";
+import { supabase } from "@/lib/supabase";
 import type { Complaint, ComplaintStatus, Notification } from "@/types";
 
 interface DataContextValue {
@@ -7,10 +16,20 @@ interface DataContextValue {
   notifications: Notification[];
   users: typeof mockUsers;
   departments: typeof mockDepartments;
+
   addComplaint: (c: Complaint) => void;
-  updateComplaintStatus: (id: string, status: ComplaintStatus, note?: string) => void;
+  updateComplaintStatus: (
+    id: string,
+    status: ComplaintStatus,
+    note?: string
+  ) => void;
   assignComplaint: (id: string, assignee: string) => void;
-  addComment: (id: string, message: string, author: string, role: "student" | "admin") => void;
+  addComment: (
+    id: string,
+    message: string,
+    author: string,
+    role: "student" | "admin"
+  ) => void;
   markNotificationRead: (id: string) => void;
   markAllRead: (userId: string) => void;
 }
@@ -18,17 +37,38 @@ interface DataContextValue {
 const DataContext = createContext<DataContextValue | undefined>(undefined);
 
 export function DataProvider({ children }: { children: ReactNode }) {
-  const [complaints, setComplaints] = useState<Complaint[]>(mockComplaints);
-  const [notifications, setNotifications] = useState<Notification[]>(mockNotifications);
+  const [complaints, setComplaints] = useState<Complaint[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+
+  // Fetch complaints from Supabase
+  useEffect(() => {
+    async function fetchComplaints() {
+      const { data, error } = await supabase
+        .from("complaints")
+        .select("*");
+
+      if (error) {
+        console.error("Error fetching complaints:", error);
+        return;
+      }
+
+      setComplaints(data as Complaint[]);
+    }
+
+    fetchComplaints();
+  }, []);
 
   const value = useMemo<DataContextValue>(
     () => ({
       complaints,
       notifications,
+
       users: mockUsers,
       departments: mockDepartments,
+
       addComplaint(c) {
         setComplaints((prev) => [c, ...prev]);
+
         setNotifications((prev) => [
           {
             id: `n-${Date.now()}`,
@@ -43,6 +83,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           ...prev,
         ]);
       },
+
       updateComplaintStatus(id, status, note) {
         setComplaints((prev) =>
           prev.map((c) =>
@@ -62,15 +103,25 @@ export function DataProvider({ children }: { children: ReactNode }) {
                     },
                   ],
                 }
-              : c,
-          ),
+              : c
+          )
         );
       },
+
       assignComplaint(id, assignee) {
         setComplaints((prev) =>
-          prev.map((c) => (c.id === id ? { ...c, assignedTo: assignee, status: "Assigned" } : c)),
+          prev.map((c) =>
+            c.id === id
+              ? {
+                  ...c,
+                  assignedTo: assignee,
+                  status: "Assigned",
+                }
+              : c
+          )
         );
       },
+
       addComment(id, message, author, role) {
         setComplaints((prev) =>
           prev.map((c) =>
@@ -88,27 +139,45 @@ export function DataProvider({ children }: { children: ReactNode }) {
                     },
                   ],
                 }
-              : c,
-          ),
+              : c
+          )
         );
       },
+
       markNotificationRead(id) {
-        setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+        setNotifications((prev) =>
+          prev.map((n) =>
+            n.id === id ? { ...n, read: true } : n
+          )
+        );
       },
+
       markAllRead(userId) {
         setNotifications((prev) =>
-          prev.map((n) => (n.userId === userId ? { ...n, read: true } : n)),
+          prev.map((n) =>
+            n.userId === userId
+              ? { ...n, read: true }
+              : n
+          )
         );
       },
     }),
-    [complaints, notifications],
+    [complaints, notifications]
   );
 
-  return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
+  return (
+    <DataContext.Provider value={value}>
+      {children}
+    </DataContext.Provider>
+  );
 }
 
 export function useData() {
   const ctx = useContext(DataContext);
-  if (!ctx) throw new Error("useData must be used within DataProvider");
+
+  if (!ctx) {
+    throw new Error("useData must be used within DataProvider");
+  }
+
   return ctx;
 }
