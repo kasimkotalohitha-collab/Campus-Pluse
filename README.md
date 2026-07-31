@@ -1,45 +1,52 @@
-# 🎓 CampusPulse
+# CampusPulse
 
-An AI-powered campus complaint management platform that enables students to report issues and allows administrators to efficiently categorize, prioritize, assign, and resolve complaints using Artificial Intelligence.
+> A modern campus complaint management platform that makes reporting, tracking, and resolving campus issues simple, organized, and transparent.
+
+## Live Demo
+
+**[Open CampusPulse](https://kasimkotalohitha-collab-campus-pluse.campuspulse-lohitha-2026.workers.dev)**
+
+## About
+
+CampusPulse provides a centralized platform where students can report campus-related issues and track their progress. Administrators can review complaints, manage their status and priority, and monitor campus issues through an organized dashboard.
 
 ## Features
 
-- Secure Authentication
-- Student Dashboard
-- Admin Dashboard
-- Faculty Dashboard
-- Complaint Submission
-- Image Upload
-- AI Complaint Categorization
-- AI Priority Detection
-- Notifications
-- Analytics Dashboard
-- Search & Filters
-- Report Generation
+- Secure user authentication
+- Student and administrator dashboards
+- Submit and manage campus complaints
+- Track complaint status and progress
+- Update complaint priority and status
+- Search and filter complaints
+- Complaint analytics and reports
+- Notifications and user profile management
 
-## Tech Stack
+## Complaint Workflow
+Submitted → Under Review → Assigned → In Progress → Resolved
 
-### Frontend
-- React
-- TypeScript
-- Vite
-- Tailwind CSS
-- shadcn/ui
-- Framer Motion
+Tech Stack
 
-### Backend
-- Node.js
-- Express.js
+Area	Technology
 
-### Database
-- PostgreSQL (Supabase)
+Frontend	React, TypeScript
 
-### AI
-- Google Gemini API
+Framework	TanStack Start
 
-### Deployment
-- Vercel
+Styling	Tailwind CSS, shadcn/ui
 
-## Status
+Backend & Database	Supabase
 
-🚧 Version 1.0
+Deployment	Cloudflare Workers
+
+Run Locally
+
+git clone https://github.com/kasimkotalohitha-collab/CampusPulse.git
+cd CampusPulse
+npm install
+npm run dev
+
+Production Build
+npm run build
+
+Author
+Lohitha Kasimkota
