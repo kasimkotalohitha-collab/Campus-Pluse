@@ -1,381 +1,398 @@
 import {
-createContext,
-useContext,
-useEffect,
-useMemo,
-useState,
-type ReactNode,
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
 } from "react";
 
 import { supabase } from "@/lib/supabase";
 import type { Role, User } from "@/types";
 
 interface AuthContextValue {
-user: User | null;
-isAuthenticated: boolean;
-login: (
-email: string,
-password: string,
-) => Promise<User>;
-register: (
-name: string,
-email: string,
-password: string,
-role: Role,
-) => Promise<User>;
-logout: () => Promise<void>;
-updateProfile: (
-patch: Partial<User>,
-) => Promise<void>;
+  user: User | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+
+  login: (
+    email: string,
+    password: string,
+  ) => Promise<User>;
+
+  register: (
+    name: string,
+    email: string,
+    password: string,
+    role: Role,
+  ) => Promise<User>;
+
+  logout: () => Promise<void>;
+
+  updateProfile: (
+    patch: Partial<User>,
+  ) => Promise<void>;
 }
 
 const AuthContext = createContext<
-AuthContextValue | undefined
-
-> (undefined);
+  AuthContextValue | undefined
+>(undefined);
 
 function mapSupabaseUser(authUser: {
-id: string;
-email?: string;
-created_at: string;
-user_metadata: Record<string, unknown>;
+  id: string;
+  email?: string;
+  created_at: string;
+  user_metadata: Record<string, unknown>;
 }): User {
-const metadata =
-authUser.user_metadata ?? {};
+  const metadata = authUser.user_metadata ?? {};
 
-return {
-id: authUser.id,
+  const storedRole = metadata.role;
 
+  const role: Role =
+    storedRole === "admin"
+      ? "admin"
+      : storedRole === "faculty"
+        ? "faculty"
+        : "student";
 
-name:
-  typeof metadata.name === "string" &&
-  metadata.name.trim()
-    ? metadata.name.trim()
-    : authUser.email?.split("@")[0] ??
-      "CampusPulse User",
+  return {
+    id: authUser.id,
 
-email:
-  authUser.email ?? "",
+    name:
+      typeof metadata.name === "string" &&
+      metadata.name.trim()
+        ? metadata.name.trim()
+        : authUser.email?.split("@")[0] ??
+          "CampusPulse User",
 
-role:
-  metadata.role === "admin"
-    ? "admin"
-    : "student",
+    email: authUser.email ?? "",
 
-avatar:
-  typeof metadata.avatar === "string"
-    ? metadata.avatar
-    : undefined,
+    role,
 
-department:
-  typeof metadata.department === "string"
-    ? metadata.department
-    : "Computer Science",
+    avatar:
+      typeof metadata.avatar === "string"
+        ? metadata.avatar
+        : undefined,
 
-studentId:
-  typeof metadata.studentId === "string"
-    ? metadata.studentId
-    : undefined,
+    department:
+      typeof metadata.department === "string"
+        ? metadata.department
+        : role === "admin"
+          ? "Campus Operations"
+          : role === "faculty"
+            ? "Faculty"
+            : "Computer Science",
 
-phone:
-  typeof metadata.phone === "string"
-    ? metadata.phone
-    : undefined,
+    studentId:
+      typeof metadata.studentId === "string"
+        ? metadata.studentId
+        : undefined,
 
-joinedAt:
-  typeof metadata.joinedAt === "string"
-    ? metadata.joinedAt
-    : authUser.created_at,
+    phone:
+      typeof metadata.phone === "string"
+        ? metadata.phone
+        : undefined,
 
-
-};
+    joinedAt:
+      typeof metadata.joinedAt === "string"
+        ? metadata.joinedAt
+        : authUser.created_at,
+  };
 }
 
 export function AuthProvider({
-children,
+  children,
 }: {
-children: ReactNode;
+  children: ReactNode;
 }) {
-const [user, setUser] =
-useState<User | null>(null);
+  const [user, setUser] =
+    useState<User | null>(null);
 
-const [ready, setReady] =
-useState(false);
+  const [isLoading, setIsLoading] =
+    useState(true);
 
-useEffect(() => {
-let isMounted = true;
+  useEffect(() => {
+    let isMounted = true;
 
+    async function loadUser() {
+      const {
+        data: {
+          user: authUser,
+        },
+        error,
+      } = await supabase.auth.getUser();
 
-async function loadUser() {
-  const {
-    data: {
-      user: authUser,
-    },
-  } =
-    await supabase.auth.getUser();
-
-  if (!isMounted) {
-    return;
-  }
-
-  setUser(
-    authUser
-      ? mapSupabaseUser(
-          authUser,
-        )
-      : null,
-  );
-
-  setReady(true);
-}
-
-loadUser();
-
-const {
-  data: {
-    subscription,
-  },
-} =
-  supabase.auth.onAuthStateChange(
-    (
-      _event,
-      session,
-    ) => {
       if (!isMounted) {
         return;
       }
 
-      setUser(
-        session?.user
-          ? mapSupabaseUser(
-              session.user,
-            )
-          : null,
-      );
-
-      setReady(true);
-    },
-  );
-
-return () => {
-  isMounted = false;
-
-  subscription.unsubscribe();
-};
-
-
-}, []);
-
-const value =
-useMemo<AuthContextValue>(
-() => ({
-user,
-
-
-    isAuthenticated:
-      !!user,
-
-    async login(
-      email,
-      password,
-    ) {
-      const {
-        data,
-        error,
-      } =
-        await supabase.auth.signInWithPassword(
-          {
-            email:
-              email.trim(),
-            password,
-          },
-        );
-
       if (error) {
-        throw new Error(
-          error.message,
+        console.error(
+          "Could not load authenticated user:",
+          error,
+        );
+
+        setUser(null);
+      } else {
+        setUser(
+          authUser
+            ? mapSupabaseUser(authUser)
+            : null,
         );
       }
 
-      if (!data.user) {
-        throw new Error(
-          "Login failed. Please try again.",
-        );
-      }
+      setIsLoading(false);
+    }
 
-      const loggedInUser =
-        mapSupabaseUser(
-          data.user,
-        );
+    loadUser();
 
-      setUser(
-        loggedInUser,
+    const {
+      data: {
+        subscription,
+      },
+    } =
+      supabase.auth.onAuthStateChange(
+        (
+          _event,
+          session,
+        ) => {
+          if (!isMounted) {
+            return;
+          }
+
+          setUser(
+            session?.user
+              ? mapSupabaseUser(
+                  session.user,
+                )
+              : null,
+          );
+
+          setIsLoading(false);
+        },
       );
 
-      return loggedInUser;
-    },
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
 
-    async register(
-      name,
-      email,
-      password,
-      role,
-    ) {
-      const joinedAt =
-        new Date().toISOString();
+  const value = useMemo<AuthContextValue>(
+    () => ({
+      user,
 
-      const {
-        data,
-        error,
-      } =
-        await supabase.auth.signUp(
-          {
-            email:
-              email.trim(),
-            password,
+      isAuthenticated:
+        !!user,
 
-            options: {
-              data: {
-                name:
-                  name.trim(),
+      isLoading,
 
-                role,
+      async login(
+        email,
+        password,
+      ) {
+        const {
+          data,
+          error,
+        } =
+          await supabase.auth
+            .signInWithPassword({
+              email:
+                email
+                  .trim()
+                  .toLowerCase(),
 
-                department:
-                  role ===
-                  "admin"
-                    ? "Campus Operations"
-                    : "Computer Science",
+              password,
+            });
 
-                joinedAt,
+        if (error) {
+          throw new Error(
+            error.message,
+          );
+        }
+
+        if (!data.user) {
+          throw new Error(
+            "Login failed. Please try again.",
+          );
+        }
+
+        const loggedInUser =
+          mapSupabaseUser(
+            data.user,
+          );
+
+        setUser(
+          loggedInUser,
+        );
+
+        return loggedInUser;
+      },
+
+      async register(
+        name,
+        email,
+        password,
+        role,
+      ) {
+        const joinedAt =
+          new Date()
+            .toISOString();
+
+        const {
+          data,
+          error,
+        } =
+          await supabase.auth
+            .signUp({
+              email:
+                email
+                  .trim()
+                  .toLowerCase(),
+
+              password,
+
+              options: {
+                data: {
+                  name:
+                    name.trim(),
+
+                  role,
+
+                  department:
+                    role ===
+                    "admin"
+                      ? "Campus Operations"
+                      : role ===
+                        "faculty"
+                        ? "Faculty"
+                        : "Computer Science",
+
+                  joinedAt,
+                },
               },
-            },
-          },
+            });
+
+        if (error) {
+          throw new Error(
+            error.message,
+          );
+        }
+
+        if (!data.user) {
+          throw new Error(
+            "Account creation failed. Please try again.",
+          );
+        }
+
+        const registeredUser =
+          mapSupabaseUser(
+            data.user,
+          );
+
+        setUser(
+          registeredUser,
         );
 
-      if (error) {
-        throw new Error(
-          error.message,
-        );
-      }
+        return registeredUser;
+      },
 
-      if (!data.user) {
-        throw new Error(
-          "Account creation failed. Please try again.",
-        );
-      }
+      async logout() {
+        const {
+          error,
+        } =
+          await supabase.auth
+            .signOut();
 
-      const registeredUser =
-        mapSupabaseUser(
-          data.user,
-        );
+        if (error) {
+          throw new Error(
+            error.message,
+          );
+        }
 
-      setUser(
-        registeredUser,
-      );
+        setUser(null);
+      },
 
-      return registeredUser;
-    },
+      async updateProfile(
+        patch,
+      ) {
+        if (!user) {
+          throw new Error(
+            "No user is currently logged in.",
+          );
+        }
 
-    async logout() {
-      const {
-        error,
-      } =
-        await supabase.auth.signOut();
-
-      if (error) {
-        throw new Error(
-          error.message,
-        );
-      }
-
-      setUser(null);
-    },
-
-    async updateProfile(
-      patch,
-    ) {
-      if (!user) {
-        throw new Error(
-          "No user is currently logged in.",
-        );
-      }
-
-      const updatedUser: User =
-        {
+        const updatedUser: User = {
           ...user,
           ...patch,
         };
 
-      const {
-        error,
-      } =
-        await supabase.auth.updateUser(
-          {
-            data: {
-              name:
-                updatedUser.name,
+        const {
+          error,
+        } =
+          await supabase.auth
+            .updateUser({
+              data: {
+                name:
+                  updatedUser.name,
 
-              role:
-                updatedUser.role,
+                role:
+                  updatedUser.role,
 
-              avatar:
-                updatedUser.avatar,
+                avatar:
+                  updatedUser.avatar,
 
-              department:
-                updatedUser.department,
+                department:
+                  updatedUser.department,
 
-              studentId:
-                updatedUser.studentId,
+                studentId:
+                  updatedUser.studentId,
 
-              phone:
-                updatedUser.phone,
+                phone:
+                  updatedUser.phone,
 
-              joinedAt:
-                updatedUser.joinedAt,
-            },
-          },
+                joinedAt:
+                  updatedUser.joinedAt,
+              },
+            });
+
+        if (error) {
+          throw new Error(
+            error.message,
+          );
+        }
+
+        setUser(
+          updatedUser,
         );
+      },
+    }),
+    [
+      user,
+      isLoading,
+    ],
+  );
 
-      if (error) {
-        throw new Error(
-          error.message,
-        );
-      }
-
-      setUser(
-        updatedUser,
-      );
-    },
-  }),
-  [user],
-);
-
-
-if (!ready) {
-return null;
-}
-
-return (
-<AuthContext.Provider
-value={value}
->
-{children}
-</AuthContext.Provider>
-);
+  return (
+    <AuthContext.Provider
+      value={value}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
 export function useAuth() {
-const context =
-useContext(
-AuthContext,
-);
+  const context =
+    useContext(
+      AuthContext,
+    );
 
-if (!context) {
-throw new Error(
-"useAuth must be used within an AuthProvider",
-);
-}
+  if (!context) {
+    throw new Error(
+      "useAuth must be used within an AuthProvider",
+    );
+  }
 
-return context;
+  return context;
 }
