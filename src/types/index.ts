@@ -73,6 +73,7 @@ export interface Complaint {
   submittedBy: string;
   submittedByName: string;
   assignedTo?: string;
+  assignedFacultyName?: string;
   department: string;
   createdAt: string;
   updatedAt: string;

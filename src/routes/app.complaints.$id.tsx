@@ -70,6 +70,7 @@ function ComplaintDetailPage() {
 
   const {
     departments,
+    users,
     updateComplaintStatus,
     addComment,
     assignComplaint,
@@ -79,6 +80,9 @@ function ComplaintDetailPage() {
 
   const [complaint, setComplaint] =
     useState<Complaint | null>(null);
+
+  const [accessDenied, setAccessDenied] =
+    useState(false);
 
   const [comment, setComment] =
     useState("");
@@ -98,6 +102,7 @@ function ComplaintDetailPage() {
   useEffect(() => {
     async function loadComplaint() {
       setLoading(true);
+      setAccessDenied(false);
       setComplaint(null);
 
       const { data, error } = await supabase
@@ -121,6 +126,24 @@ function ComplaintDetailPage() {
       }
 
       if (!data) {
+        setLoading(false);
+        return;
+      }
+
+      if (
+        user?.role === "student" &&
+        data.submitted_by !== user.id
+      ) {
+        setAccessDenied(true);
+        setLoading(false);
+        return;
+      }
+
+      if (
+        user?.role === "faculty" &&
+        data.assigned_to !== user.id
+      ) {
+        setAccessDenied(true);
         setLoading(false);
         return;
       }
@@ -182,6 +205,10 @@ function ComplaintDetailPage() {
           data.assigned_to ??
           undefined,
 
+        assignedFacultyName:
+          data.assigned_faculty_name ??
+          undefined,
+
         adminNotes:
           data.admin_notes ??
           undefined,
@@ -219,7 +246,7 @@ function ComplaintDetailPage() {
     }
 
     loadComplaint();
-  }, [id]);
+  }, [id, user]);
 
   async function submitComment() {
     if (
@@ -397,7 +424,7 @@ function ComplaintDetailPage() {
   }
 
   async function handleAssignment(
-    assignee: string,
+    facultyId: string,
   ) {
     if (
       !complaint ||
@@ -408,21 +435,24 @@ function ComplaintDetailPage() {
 
     setSavingAssignment(true);
 
-    const selectedDepartment =
-      departments.find(
-        (department) =>
-          department.head ===
-          assignee,
+    const selectedFaculty =
+      users.find(
+        (u) =>
+          u.id === facultyId &&
+          u.role === "faculty",
       );
 
     const { error } = await supabase
       .from("complaints")
       .update({
         assigned_to:
-          assignee,
+          facultyId,
+
+        assigned_faculty_name:
+          selectedFaculty?.name,
 
         department:
-          selectedDepartment?.name ??
+          selectedFaculty?.department ??
           complaint.department,
 
         status:
@@ -454,10 +484,13 @@ function ComplaintDetailPage() {
       ...complaint,
 
       assignedTo:
-        assignee,
+        facultyId,
+
+      assignedFacultyName:
+        selectedFaculty?.name,
 
       department:
-        selectedDepartment?.name ??
+        selectedFaculty?.department ??
         complaint.department,
 
       status:
@@ -466,13 +499,13 @@ function ComplaintDetailPage() {
 
     assignComplaint(
       complaint.id,
-      assignee,
+      facultyId,
     );
 
     setSavingAssignment(false);
 
     toast.success(
-      `Assigned to ${assignee}`,
+      `Assigned to ${selectedFaculty?.name ?? facultyId}`,
     );
   }
 
@@ -480,6 +513,20 @@ function ComplaintDetailPage() {
     return (
       <div className="flex min-h-[50vh] items-center justify-center">
         <Loader2 className="h-7 w-7 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (accessDenied) {
+    return (
+      <div className="mx-auto max-w-2xl py-16 text-center">
+        <h2 className="text-xl font-semibold">Access denied</h2>
+        <p className="mt-2 text-sm text-muted-foreground">
+          You do not have permission to view this complaint.
+        </p>
+        <Button asChild className="mt-4">
+          <Link to="/app/complaints">Back to complaints</Link>
+        </Button>
       </div>
     );
   }
@@ -784,11 +831,10 @@ function ComplaintDetailPage() {
             }
           />
 
-          {user?.role ===
-            "admin" && (
+          {(user?.role === "admin" || user?.role === "faculty") && (
             <Card className="p-6">
               <h3 className="text-sm font-semibold">
-                Admin actions
+                Actions
               </h3>
 
               <div className="mt-4 space-y-4">
@@ -835,53 +881,61 @@ function ComplaintDetailPage() {
                   </Select>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-muted-foreground">
-                    Assign to
-                  </label>
+                {user?.role === "admin" ? (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      Assign to
+                    </label>
 
-                  <Select
-                    value={
-                      complaint.assignedTo ??
-                      ""
-                    }
-                    onValueChange={
-                      handleAssignment
-                    }
-                    disabled={
-                      savingAssignment
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select department head" />
-                    </SelectTrigger>
+                    <Select
+                      value={
+                        complaint.assignedTo ??
+                        ""
+                      }
+                      onValueChange={
+                        handleAssignment
+                      }
+                      disabled={
+                        savingAssignment
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select faculty" />
+                      </SelectTrigger>
 
-                    <SelectContent>
-                      {departments.map(
-                        (
-                          department,
-                        ) => (
-                          <SelectItem
-                            key={
-                              department.id
-                            }
-                            value={
-                              department.head
-                            }
-                          >
-                            {
-                              department.head
-                            }
-                            {" · "}
-                            {
-                              department.name
-                            }
-                          </SelectItem>
-                        ),
-                      )}
-                    </SelectContent>
-                  </Select>
-                </div>
+                      <SelectContent>
+                        {users
+                          .filter(
+                            (u) =>
+                              u.role ===
+                              "faculty",
+                          )
+                          .map(
+                            (
+                              faculty,
+                            ) => (
+                              <SelectItem
+                                key={
+                                  faculty.id
+                                }
+                                value={
+                                  faculty.id
+                                }
+                              >
+                                {
+                                  faculty.name
+                                }
+                                {" · "}
+                                {
+                                  faculty.department
+                                }
+                              </SelectItem>
+                            ),
+                          )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : null}
 
                 {complaint.adminNotes && (
                   <div className="rounded-lg border border-border bg-muted/40 p-3 text-xs">
@@ -900,7 +954,7 @@ function ComplaintDetailPage() {
             </Card>
           )}
 
-          {complaint.assignedTo && (
+          {complaint.assignedFacultyName && (
             <Card className="p-4">
               <p className="text-xs text-muted-foreground">
                 Assigned to
@@ -908,7 +962,7 @@ function ComplaintDetailPage() {
 
               <p className="mt-1 text-sm font-semibold">
                 {
-                  complaint.assignedTo
+                  complaint.assignedFacultyName
                 }
               </p>
 

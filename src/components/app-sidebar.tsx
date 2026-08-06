@@ -34,11 +34,17 @@ const studentNav = [
   { title: "Profile", url: "/app/profile", icon: Settings },
 ];
 
+const facultyNav = [
+  { title: "Dashboard", url: "/app/dashboard", icon: LayoutDashboard },
+  { title: "Assigned Complaints", url: "/app/complaints", icon: FileText },
+  { title: "Profile", url: "/app/profile", icon: Settings },
+];
+
 const adminNav = [
   { title: "Dashboard", url: "/app/dashboard", icon: LayoutDashboard },
   { title: "Complaints", url: "/app/complaints", icon: FileText },
   { title: "Analytics", url: "/app/analytics", icon: BarChart3 },
-  { title: "Users", url: "/app/users", icon: Users },
+  { title: "Faculty", url: "/app/users", icon: Users },
   { title: "Reports", url: "/app/reports", icon: ShieldCheck },
   { title: "Notifications", url: "/app/notifications", icon: Bell },
   { title: "Profile", url: "/app/profile", icon: Settings },
@@ -47,7 +53,12 @@ const adminNav = [
 export function AppSidebar() {
   const { user, logout } = useAuth();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const items = user?.role === "admin" ? adminNav : studentNav;
+  const items =
+    user?.role === "admin"
+      ? adminNav
+      : user?.role === "faculty"
+      ? facultyNav
+      : studentNav;
 
   return (
     <Sidebar collapsible="icon">
@@ -59,7 +70,11 @@ export function AppSidebar() {
           <div className="flex flex-col leading-tight group-data-[collapsible=icon]:hidden">
             <span className="text-sm font-semibold">CampusPulse</span>
             <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-              {user?.role === "admin" ? "Admin" : "Student"}
+              {user?.role === "admin"
+                ? "Admin"
+                : user?.role === "faculty"
+                ? "Faculty"
+                : "Student"}
             </span>
           </div>
         </Link>

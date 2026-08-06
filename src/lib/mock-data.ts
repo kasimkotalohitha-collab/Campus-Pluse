@@ -121,6 +121,24 @@ export const mockUsers: User[] = [
     phone: "+91 98765 11111",
     joinedAt: daysAgo(900),
   },
+  {
+    id: "u-faculty-1",
+    name: "Dr. Rekha Nair",
+    email: "faculty1@campus.edu",
+    role: "faculty",
+    department: "IT Services",
+    phone: "+91 98765 22222",
+    joinedAt: daysAgo(650),
+  },
+  {
+    id: "u-faculty-2",
+    name: "Prof. Amit Bose",
+    email: "faculty2@campus.edu",
+    role: "faculty",
+    department: "Facilities Maintenance",
+    phone: "+91 98765 33333",
+    joinedAt: daysAgo(620),
+  },
   ...Array.from({ length: 13 }).map((_, i) => ({
     id: `u-${i + 3}`,
     name: pick(

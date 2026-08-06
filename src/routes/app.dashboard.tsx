@@ -145,11 +145,10 @@ async function loadComplaints() {
       ascending: false,
     });
 
-  if (user.role !== "admin") {
-    query = query.eq(
-      "submitted_by",
-      user.id,
-    );
+  if (user.role === "student") {
+    query = query.eq("submitted_by", user.id);
+  } else if (user.role === "faculty") {
+    query = query.eq("assigned_to", user.id);
   }
 
   const { data, error } = await query;
@@ -237,37 +236,45 @@ complaints,
 ]);
 
 const firstName =
-user?.name
-?.trim()
-.split(/\s+/)[0] ||
-"Student";
+  user?.name
+    ?.trim()
+    .split(/\s+/)[0] ||
+  (user?.role === "faculty"
+    ? "Faculty"
+    : "Student");
 
-return ( <div className="space-y-6"> <div className="flex flex-wrap items-end justify-between gap-4"> <div> <h1 className="text-2xl font-semibold tracking-tight">
-{user?.role ===
-"admin"
-? "Admin overview"
-: `Hi, ${firstName}`} </h1>
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {user?.role === "admin"
+              ? "Admin overview"
+              : user?.role === "faculty"
+              ? `Welcome, ${firstName}`
+              : `Hi, ${firstName}`}
+          </h1>
 
-```
-      <p className="text-sm text-muted-foreground">
-        {user?.role ===
-        "admin"
-          ? "Monitor campus-wide complaints, workload, and resolution health."
-          : "Track your complaints, updates, and campus notifications."}
-      </p>
-    </div>
+          <p className="text-sm text-muted-foreground">
+            {user?.role === "admin"
+              ? "Monitor campus-wide complaints, workload, and resolution health."
+              : user?.role === "faculty"
+              ? "Track your assigned complaints and keep students updated."
+              : "Track your complaints, updates, and campus notifications."}
+          </p>
+        </div>
 
-    <Button
-      asChild
-      className="gradient-primary text-primary-foreground shadow-[var(--shadow-glow)]"
-    >
-      <Link to="/app/submit">
-        <MessageSquarePlus className="mr-1.5 h-4 w-4" />
+        <Button
+          asChild
+          className="gradient-primary text-primary-foreground shadow-[var(--shadow-glow)]"
+        >
+          <Link to="/app/submit">
+            <MessageSquarePlus className="mr-1.5 h-4 w-4" />
 
-        New complaint
-      </Link>
-    </Button>
-  </div>
+            New complaint
+          </Link>
+        </Button>
+      </div>
 
   <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
     <StatCard

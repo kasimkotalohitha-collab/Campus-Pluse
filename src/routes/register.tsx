@@ -128,7 +128,7 @@ return ( <AuthShell
         onValueChange={(value) => setRole(value as Role)}
         className="grid grid-cols-2 gap-2"
       >
-        {(["student", "admin"] as Role[]).map((currentRole) => (
+        {(["student", "faculty", "admin"] as Role[]).map((currentRole) => (
           <label
             key={currentRole}
             className="flex cursor-pointer items-center gap-2 rounded-lg border border-border p-3 text-sm capitalize transition-colors has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5"

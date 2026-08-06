@@ -99,6 +99,7 @@ type ComplaintRow = {
     | null;
 
   assigned_to: string | null;
+  assigned_faculty_name: string | null;
 
   admin_notes: string | null;
 };
@@ -161,6 +162,10 @@ function mapComplaint(
 
     assignedTo:
       row.assigned_to ??
+      undefined,
+
+    assignedFacultyName:
+      row.assigned_faculty_name ??
       undefined,
 
     department:
@@ -326,23 +331,20 @@ function ComplaintsPage() {
         "",
       );
 
-      const {
-        data,
-        error,
-      } = await supabase
-        .from(
-          "complaints",
-        )
-        .select(
-          "*",
-        )
-        .order(
-          "created_at",
-          {
-            ascending:
-              false,
-          },
-        );
+      let query = supabase
+        .from("complaints")
+        .select("*")
+        .order("created_at", {
+          ascending: false,
+        });
+
+      if (user?.role === "student") {
+        query = query.eq("submitted_by", user.id);
+      } else if (user?.role === "faculty") {
+        query = query.eq("assigned_to", user.id);
+      }
+
+      const { data, error } = await query;
 
       if (
         !active
@@ -387,25 +389,27 @@ function ComplaintsPage() {
     loadComplaints();
 
     return () => {
-      active =
-        false;
+      active = false;
     };
-  }, []);
+  }, [user]);
 
   const scoped =
     useMemo(
       () => {
-        if (
-          user?.role ===
-          "admin"
-        ) {
+        if (user?.role === "admin") {
           return complaints;
         }
 
+        if (user?.role === "faculty") {
+          return complaints.filter(
+            (complaint) =>
+              complaint.assignedTo ===
+              user.id,
+          );
+        }
+
         return complaints.filter(
-          (
-            complaint,
-          ) =>
+          (complaint) =>
             complaint.submittedBy ===
             user?.id,
         );
@@ -514,10 +518,11 @@ function ComplaintsPage() {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">
-            {user?.role ===
-            "admin"
-              ? "All complaints"
-              : "My complaints"}
+            {user?.role === "admin"
+            ? "All complaints"
+            : user?.role === "faculty"
+            ? "Assigned complaints"
+            : "My complaints"}
           </h1>
 
           <p className="text-sm text-muted-foreground">
@@ -532,16 +537,18 @@ function ComplaintsPage() {
           </p>
         </div>
 
-        <Button
-          asChild
-          className="gradient-primary text-primary-foreground shadow-[var(--shadow-glow)]"
-        >
-          <Link to="/app/submit">
-            <MessageSquarePlus className="mr-1.5 h-4 w-4" />
+        {user?.role !== "faculty" && (
+          <Button
+            asChild
+            className="gradient-primary text-primary-foreground shadow-[var(--shadow-glow)]"
+          >
+            <Link to="/app/submit">
+              <MessageSquarePlus className="mr-1.5 h-4 w-4" />
 
-            New complaint
-          </Link>
-        </Button>
+              New complaint
+            </Link>
+          </Button>
+        )}
       </div>
 
       <Card className="p-4">

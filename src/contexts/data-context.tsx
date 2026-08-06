@@ -28,7 +28,7 @@ interface DataContextValue {
     id: string,
     message: string,
     author: string,
-    role: "student" | "admin"
+    role: "student" | "admin" | "faculty"
   ) => void;
   markNotificationRead: (id: string) => void;
   markAllRead: (userId: string) => void;
