@@ -1,4 +1,3 @@
-
 import {
   createContext,
   useContext,
@@ -17,17 +16,22 @@ interface AuthContextValue {
   isLoading: boolean;
 
   login: (email: string, password: string) => Promise<User>;
+
   register: (
     name: string,
     email: string,
     password: string,
     role: Role
   ) => Promise<User>;
+
   logout: () => Promise<void>;
+
   updateProfile: (patch: Partial<User>) => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+const AuthContext = createContext<AuthContextValue | undefined>(
+  undefined
+);
 
 type ProfileRow = {
   id?: string;
@@ -54,16 +58,22 @@ type SupabaseAuthUser = {
   user_metadata?: Record<string, unknown>;
 };
 
-function normalizeRole(value: unknown): Role {
+/* ---------------------------------------------------------
+   ROLE HELPERS
+--------------------------------------------------------- */
+
+function normalizeRole(value: unknown): Role | null {
   if (value === "admin") return "admin";
   if (value === "faculty") return "faculty";
-  return "student";
+  if (value === "student") return "student";
+
+  return null;
 }
 
 function getProfileValue(
   row: ProfileRow | null | undefined,
   keys: string[]
-) {
+): string | undefined {
   if (!row) return undefined;
 
   for (const key of keys) {
@@ -77,17 +87,45 @@ function getProfileValue(
   return undefined;
 }
 
+/* ---------------------------------------------------------
+   SUPABASE USER -> CAMPUSPULSE USER
+--------------------------------------------------------- */
+
 function mapSupabaseUser(
   authUser: SupabaseAuthUser,
   profile?: ProfileRow | null
 ): User {
   const metadata = authUser.user_metadata ?? {};
 
+  const profileRole = normalizeRole(profile?.role);
+
+  const metadataRole = normalizeRole(metadata.role);
+
+  /*
+   * Priority:
+   *
+   * 1. profiles.role
+   * 2. auth metadata role
+   * 3. student
+   *
+   * The database profile is the main source of truth.
+   */
+  const role: Role =
+    profileRole ??
+    metadataRole ??
+    "student";
+
   const nameFromProfile = getProfileValue(profile, [
     "name",
     "full_name",
     "display_name",
   ]);
+
+  const metadataName =
+    typeof metadata.name === "string" &&
+    metadata.name.trim()
+      ? metadata.name.trim()
+      : undefined;
 
   const departmentFromProfile = getProfileValue(profile, [
     "department",
@@ -111,19 +149,9 @@ function mapSupabaseUser(
     "avatar",
   ]);
 
-  /*
-   * IMPORTANT:
-   * The profile role is the source of truth.
-   * Only fall back to Auth metadata if there is no profile role.
-   */
-  const role = normalizeRole(
-    profile?.role ?? metadata.role
-  );
-
-  const metadataName =
-    typeof metadata.name === "string" &&
-    metadata.name.trim()
-      ? metadata.name.trim()
+  const metadataAvatar =
+    typeof metadata.avatar === "string"
+      ? metadata.avatar
       : undefined;
 
   return {
@@ -135,15 +163,16 @@ function mapSupabaseUser(
       authUser.email?.split("@")[0] ??
       "CampusPulse User",
 
-    email: authUser.email ?? profile?.email ?? "",
+    email:
+      authUser.email ??
+      profile?.email ??
+      "",
 
     role,
 
     avatar:
       avatarFromProfile ??
-      (typeof metadata.avatar === "string"
-        ? metadata.avatar
-        : undefined),
+      metadataAvatar,
 
     department:
       departmentFromProfile ??
@@ -153,15 +182,21 @@ function mapSupabaseUser(
           ? "Faculty"
           : "Computer Science"),
 
-    studentId: studentIdFromProfile,
+    studentId:
+      studentIdFromProfile,
 
-    phone: phoneFromProfile,
+    phone:
+      phoneFromProfile,
 
     joinedAt:
       joinedAtFromProfile ??
       authUser.created_at,
   };
 }
+
+/* ---------------------------------------------------------
+   GET PROFILE
+--------------------------------------------------------- */
 
 async function fetchProfileForUser(
   userId: string
@@ -170,41 +205,73 @@ async function fetchProfileForUser(
     const { data, error } = await supabase
       .from("profiles")
       .select(
-        "id, name, full_name, email, role, department, student_id, phone, joined_at, avatar"
+        `
+          id,
+          name,
+          full_name,
+          email,
+          role,
+          department,
+          student_id,
+          phone,
+          joined_at,
+          avatar
+        `
       )
       .eq("id", userId)
       .maybeSingle();
 
     if (error) {
-      console.error("Error loading profile:", error);
+      console.error(
+        "Error loading profile:",
+        error
+      );
+
       return null;
     }
 
-    return (data as ProfileRow | null) ?? null;
+    return (
+      (data as ProfileRow | null) ??
+      null
+    );
   } catch (error) {
-    console.error("Profile fetch failed:", error);
+    console.error(
+      "Profile fetch failed:",
+      error
+    );
+
     return null;
   }
 }
 
+/* ---------------------------------------------------------
+   CREATE PROFILE IF IT DOES NOT EXIST
+--------------------------------------------------------- */
+
 async function ensureProfileForUser(
   authUser: SupabaseAuthUser,
-  fallbackRole: Role = "student"
+  fallbackRole: Role
 ): Promise<ProfileRow | null> {
-  const existingProfile = await fetchProfileForUser(authUser.id);
+  const existingProfile =
+    await fetchProfileForUser(authUser.id);
 
   if (existingProfile) {
     return existingProfile;
   }
 
-  const metadata = authUser.user_metadata ?? {};
+  const metadata =
+    authUser.user_metadata ?? {};
 
-  const name =
+  const metadataName =
     typeof metadata.name === "string" &&
     metadata.name.trim()
       ? metadata.name.trim()
-      : authUser.email?.split("@")[0] ??
-        "CampusPulse User";
+      : undefined;
+
+  const name =
+    metadataName ??
+    authUser.email?.split("@")[0] ??
+    "CampusPulse User";
 
   const department =
     fallbackRole === "admin"
@@ -214,72 +281,109 @@ async function ensureProfileForUser(
         : "Computer Science";
 
   try {
-    const { data, error } = await supabase
-      .from("profiles")
-      .upsert(
-        {
-          id: authUser.id,
-          name,
-          full_name: name,
-          email: authUser.email ?? "",
-          role: fallbackRole,
-          department,
-          joined_at: authUser.created_at,
-          created_at: authUser.created_at,
-          updated_at: new Date().toISOString(),
-        },
-        {
-          onConflict: "id",
-        }
-      )
-      .select()
-      .maybeSingle();
+    const { data, error } =
+      await supabase
+        .from("profiles")
+        .upsert(
+          {
+            id: authUser.id,
+            name,
+            full_name: name,
+            email: authUser.email ?? "",
+            role: fallbackRole,
+            department,
+            joined_at: authUser.created_at,
+            created_at: authUser.created_at,
+            updated_at:
+              new Date().toISOString(),
+          },
+          {
+            onConflict: "id",
+          }
+        )
+        .select()
+        .maybeSingle();
 
     if (error) {
-      console.error("Could not create profile:", error);
+      console.error(
+        "Could not create profile:",
+        error
+      );
+
       return null;
     }
 
-    return (data as ProfileRow | null) ?? null;
+    return (
+      (data as ProfileRow | null) ??
+      null
+    );
   } catch (error) {
-    console.error("Profile creation failed:", error);
+    console.error(
+      "Profile creation failed:",
+      error
+    );
+
     return null;
   }
 }
+
+/* ---------------------------------------------------------
+   HYDRATE AUTH USER
+--------------------------------------------------------- */
 
 async function hydrateUser(
   authUser: SupabaseAuthUser,
   fallbackRole: Role = "student"
 ): Promise<User> {
-  let profile = await fetchProfileForUser(authUser.id);
+  let profile =
+    await fetchProfileForUser(authUser.id);
 
+  /*
+   * If no profile exists, create one.
+   */
   if (!profile) {
-    profile = await ensureProfileForUser(
-      authUser,
-      fallbackRole
-    );
+    profile =
+      await ensureProfileForUser(
+        authUser,
+        fallbackRole
+      );
   }
 
-  return mapSupabaseUser(authUser, profile);
+  return mapSupabaseUser(
+    authUser,
+    profile
+  );
 }
+
+/* ---------------------------------------------------------
+   AUTH PROVIDER
+--------------------------------------------------------- */
 
 export function AuthProvider({
   children,
 }: {
   children: ReactNode;
 }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [user, setUser] =
+    useState<User | null>(null);
+
+  const [isLoading, setIsLoading] =
+    useState(true);
 
   useEffect(() => {
     let isMounted = true;
 
+    /*
+     * Load the currently authenticated
+     * Supabase user when the app starts.
+     */
     async function loadUser() {
       try {
         const {
           data: { user: authUser },
           error,
-        } = await supabase.auth.getUser();
+        } =
+          await supabase.auth.getUser();
 
         if (!isMounted) return;
 
@@ -289,15 +393,17 @@ export function AuthProvider({
           return;
         }
 
-        const hydratedUser = await hydrateUser(
-          authUser
-        );
+        const hydratedUser =
+          await hydrateUser(authUser);
 
         if (!isMounted) return;
 
         setUser(hydratedUser);
       } catch (error) {
-        console.error("Failed to load user:", error);
+        console.error(
+          "Failed to load user:",
+          error
+        );
 
         if (isMounted) {
           setUser(null);
@@ -311,32 +417,51 @@ export function AuthProvider({
 
     void loadUser();
 
+    /*
+     * Listen for Supabase authentication changes.
+     */
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        if (!isMounted) return;
+    } =
+      supabase.auth.onAuthStateChange(
+        async (_event, session) => {
+          if (!isMounted) return;
 
-        if (!session?.user) {
-          setUser(null);
-          setIsLoading(false);
-          return;
+          /*
+           * User signed out.
+           */
+          if (!session?.user) {
+            setUser(null);
+            setIsLoading(false);
+            return;
+          }
+
+          try {
+            /*
+             * IMPORTANT:
+             * Always use the user from the CURRENT
+             * Supabase session.
+             */
+            const hydratedUser =
+              await hydrateUser(
+                session.user
+              );
+
+            if (!isMounted) return;
+
+            setUser(hydratedUser);
+          } catch (error) {
+            console.error(
+              "Failed to hydrate auth user:",
+              error
+            );
+          } finally {
+            if (isMounted) {
+              setIsLoading(false);
+            }
+          }
         }
-
-        /*
-         * Use the actual Supabase user ID from the session.
-         * Never reuse an old/local user here.
-         */
-        const hydratedUser = await hydrateUser(
-          session.user
-        );
-
-        if (!isMounted) return;
-
-        setUser(hydratedUser);
-        setIsLoading(false);
-      }
-    );
+      );
 
     return () => {
       isMounted = false;
@@ -344,208 +469,370 @@ export function AuthProvider({
     };
   }, []);
 
-  const value = useMemo<AuthContextValue>(
-    () => ({
-      user,
+  const value =
+    useMemo<AuthContextValue>(
+      () => ({
+        user,
 
-      isAuthenticated: !!user,
+        isAuthenticated:
+          !!user,
 
-      isLoading,
+        isLoading,
 
-      async login(email, password) {
-        const cleanEmail = email
-          .trim()
-          .toLowerCase();
+        /* -------------------------------------------------
+           LOGIN
+        ------------------------------------------------- */
 
-        const { data, error } =
-          await supabase.auth.signInWithPassword({
-            email: cleanEmail,
-            password,
-          });
+        async login(
+          email,
+          password
+        ) {
+          const cleanEmail =
+            email
+              .trim()
+              .toLowerCase();
 
-        if (error) {
-          throw new Error(error.message);
-        }
+          const {
+            data,
+            error,
+          } =
+            await supabase.auth.signInWithPassword(
+              {
+                email: cleanEmail,
+                password,
+              }
+            );
 
-        if (!data.user) {
-          throw new Error(
-            "Login failed. Please try again."
-          );
-        }
+          if (error) {
+            throw new Error(
+              error.message
+            );
+          }
 
-        /*
-         * Get the profile belonging specifically
-         * to this Supabase Auth user ID.
-         */
-        const loggedInUser = await hydrateUser(
-          data.user
-        );
+          if (!data.user) {
+            throw new Error(
+              "Login failed. Please try again."
+            );
+          }
 
-        setUser(loggedInUser);
+          /*
+           * Get THIS user's profile using
+           * THIS user's Supabase UUID.
+           */
+          const loggedInUser =
+            await hydrateUser(
+              data.user
+            );
 
-        return loggedInUser;
-      },
+          setUser(loggedInUser);
 
-      async register(
-        name,
-        email,
-        password,
-        role
-      ) {
-        const cleanName = name.trim();
-        const cleanEmail = email
-          .trim()
-          .toLowerCase();
+          return loggedInUser;
+        },
 
-        const { data, error } =
-          await supabase.auth.signUp({
-            email: cleanEmail,
-            password,
+        /* -------------------------------------------------
+           REGISTER
+        ------------------------------------------------- */
 
-            options: {
-              data: {
-                name: cleanName,
-                role,
-                department:
-                  role === "admin"
-                    ? "Campus Operations"
-                    : role === "faculty"
-                      ? "Faculty"
-                      : "Computer Science",
-              },
-            },
-          });
-
-        if (error) {
-          throw new Error(error.message);
-        }
-
-        if (!data.user) {
-          throw new Error(
-            "Account creation failed. Please try again."
-          );
-        }
-
-        /*
-         * Create the profile using the NEW user's
-         * Supabase UUID.
-         */
-        const profile = await ensureProfileForUser(
-          data.user,
+        async register(
+          name,
+          email,
+          password,
           role
-        );
+        ) {
+          const cleanName =
+            name.trim();
 
-        const registeredUser = mapSupabaseUser(
-          data.user,
-          profile
-        );
+          const cleanEmail =
+            email
+              .trim()
+              .toLowerCase();
 
-        /*
-         * If email confirmation is enabled,
-         * Supabase returns a user but NO session.
-         *
-         * Therefore don't pretend the user is logged in.
-         */
-        if (data.session) {
-          setUser(registeredUser);
-        } else {
+          /*
+           * Make sure only valid roles
+           * are sent to Supabase.
+           */
+          const selectedRole =
+            normalizeRole(role);
+
+          if (!selectedRole) {
+            throw new Error(
+              "Invalid account role."
+            );
+          }
+
+          const department =
+            selectedRole === "admin"
+              ? "Campus Operations"
+              : selectedRole === "faculty"
+                ? "Faculty"
+                : "Computer Science";
+
+          /*
+           * Create Supabase Auth account.
+           */
+          const {
+            data,
+            error,
+          } =
+            await supabase.auth.signUp({
+              email: cleanEmail,
+              password,
+
+              options: {
+                data: {
+                  name: cleanName,
+                  role: selectedRole,
+                  department,
+                },
+              },
+            });
+
+          if (error) {
+            throw new Error(
+              error.message
+            );
+          }
+
+          if (!data.user) {
+            throw new Error(
+              "Account creation failed. Please try again."
+            );
+          }
+
+          /*
+           * Make sure the profile exists.
+           */
+          await ensureProfileForUser(
+            data.user,
+            selectedRole
+          );
+
+          /*
+           * CRITICAL FIX:
+           *
+           * If a profile was already created
+           * automatically by a Supabase trigger,
+           * it may have role = "student".
+           *
+           * We explicitly set the role selected
+           * during registration.
+           */
+          const {
+            data: updatedProfile,
+            error: roleError,
+          } =
+            await supabase
+              .from("profiles")
+              .update({
+                role: selectedRole,
+                name: cleanName,
+                full_name: cleanName,
+                email:
+                  data.user.email ??
+                  cleanEmail,
+                department,
+                updated_at:
+                  new Date().toISOString(),
+              })
+              .eq("id", data.user.id)
+              .select()
+              .maybeSingle();
+
+          if (roleError) {
+            console.error(
+              "Could not save user role:",
+              roleError
+            );
+
+            throw new Error(
+              `Account created, but the role could not be saved: ${roleError.message}`
+            );
+          }
+
+          /*
+           * Build the CampusPulse user
+           * using the UPDATED profile.
+           */
+          const registeredUser =
+            mapSupabaseUser(
+              data.user,
+              (updatedProfile as ProfileRow | null) ??
+                null
+            );
+
+          /*
+           * If email confirmation is disabled,
+           * Supabase returns a session and the
+           * user is immediately logged in.
+           *
+           * If confirmation is enabled,
+           * there is no session yet.
+           */
+          if (data.session) {
+            setUser(
+              registeredUser
+            );
+          } else {
+            setUser(null);
+          }
+
+          return registeredUser;
+        },
+
+        /* -------------------------------------------------
+           LOGOUT
+        ------------------------------------------------- */
+
+        async logout() {
+          const {
+            error,
+          } =
+            await supabase.auth.signOut();
+
+          if (error) {
+            throw new Error(
+              error.message
+            );
+          }
+
           setUser(null);
-        }
+        },
 
-        return registeredUser;
-      },
+        /* -------------------------------------------------
+           UPDATE PROFILE
+        ------------------------------------------------- */
 
-      async logout() {
-        const { error } =
-          await supabase.auth.signOut();
+        async updateProfile(
+          patch
+        ) {
+          if (!user) {
+            throw new Error(
+              "No user is currently logged in."
+            );
+          }
 
-        if (error) {
-          throw new Error(error.message);
-        }
+          const updatedUser: User = {
+            ...user,
+            ...patch,
+          };
 
-        setUser(null);
-      },
+          /*
+           * Update Supabase Auth metadata.
+           */
+          const {
+            error: authError,
+          } =
+            await supabase.auth.updateUser({
+              data: {
+                name:
+                  updatedUser.name,
 
-      async updateProfile(patch) {
-        if (!user) {
-          throw new Error(
-            "No user is currently logged in."
-          );
-        }
+                role:
+                  updatedUser.role,
 
-        const updatedUser: User = {
-          ...user,
-          ...patch,
-        };
+                avatar:
+                  updatedUser.avatar,
 
-        /*
-         * Update Supabase Auth metadata.
-         */
-        const { error: authError } =
-          await supabase.auth.updateUser({
-            data: {
-              name: updatedUser.name,
-              role: updatedUser.role,
-              avatar: updatedUser.avatar,
-              department: updatedUser.department,
-              studentId: updatedUser.studentId,
-              phone: updatedUser.phone,
-              joinedAt: updatedUser.joinedAt,
-            },
-          });
+                department:
+                  updatedUser.department,
 
-        if (authError) {
-          throw new Error(authError.message);
-        }
+                studentId:
+                  updatedUser.studentId,
 
-        /*
-         * Update the actual profiles table too.
-         */
-        const { error: profileError } =
-          await supabase
-            .from("profiles")
-            .update({
-              name: updatedUser.name,
-              full_name: updatedUser.name,
-              email: updatedUser.email,
-              role: updatedUser.role,
-              department:
-                updatedUser.department,
-              student_id:
-                updatedUser.studentId ?? null,
-              phone:
-                updatedUser.phone ?? null,
-              avatar:
-                updatedUser.avatar ?? null,
-              joined_at:
-                updatedUser.joinedAt,
-              updated_at:
-                new Date().toISOString(),
-            })
-            .eq("id", user.id);
+                phone:
+                  updatedUser.phone,
 
-        if (profileError) {
-          console.error(
-            "Profile table update failed:",
-            profileError
-          );
-        }
+                joinedAt:
+                  updatedUser.joinedAt,
+              },
+            });
 
-        setUser(updatedUser);
-      },
-    }),
-    [user, isLoading]
-  );
+          if (authError) {
+            throw new Error(
+              authError.message
+            );
+          }
+
+          /*
+           * Update the profiles table.
+           */
+          const {
+            error: profileError,
+          } =
+            await supabase
+              .from("profiles")
+              .update({
+                name:
+                  updatedUser.name,
+
+                full_name:
+                  updatedUser.name,
+
+                email:
+                  updatedUser.email,
+
+                role:
+                  updatedUser.role,
+
+                department:
+                  updatedUser.department,
+
+                student_id:
+                  updatedUser.studentId ??
+                  null,
+
+                phone:
+                  updatedUser.phone ??
+                  null,
+
+                avatar:
+                  updatedUser.avatar ??
+                  null,
+
+                joined_at:
+                  updatedUser.joinedAt,
+
+                updated_at:
+                  new Date().toISOString(),
+              })
+              .eq(
+                "id",
+                user.id
+              );
+
+          if (profileError) {
+            console.error(
+              "Profile table update failed:",
+              profileError
+            );
+
+            throw new Error(
+              `Profile update failed: ${profileError.message}`
+            );
+          }
+
+          setUser(updatedUser);
+        },
+      }),
+      [user, isLoading]
+    );
 
   return (
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider
+      value={value}
+    >
       {children}
     </AuthContext.Provider>
   );
 }
 
+/* ---------------------------------------------------------
+   USE AUTH
+--------------------------------------------------------- */
+
 export function useAuth() {
-  const context = useContext(AuthContext);
+  const context =
+    useContext(AuthContext);
 
   if (!context) {
     throw new Error(
@@ -555,4 +842,3 @@ export function useAuth() {
 
   return context;
 }
-

@@ -31,13 +31,8 @@ import {
   StatusBadge,
 } from "@/components/status-badge";
 
-import {
-  AIAnalysisCard,
-} from "@/components/ai-analysis-card";
-
-import {
-  ComplaintTimeline,
-} from "@/components/complaint-timeline";
+import { AIAnalysisCard } from "@/components/ai-analysis-card";
+import { ComplaintTimeline } from "@/components/complaint-timeline";
 
 import { useAuth } from "@/contexts/auth-context";
 import { useData } from "@/contexts/data-context";
@@ -49,9 +44,7 @@ import type {
   User,
 } from "@/types";
 
-export const Route = createFileRoute(
-  "/app/complaints/$id",
-)({
+export const Route = createFileRoute("/app/complaints/$id")({
   component: ComplaintDetailPage,
 });
 
@@ -70,7 +63,6 @@ function ComplaintDetailPage() {
   });
 
   const {
-    users,
     updateComplaintStatus,
     addComment,
     assignComplaint,
@@ -98,28 +90,37 @@ function ComplaintDetailPage() {
 
   const [savingAssignment, setSavingAssignment] =
     useState(false);
-  const [facultyUsers, setFacultyUsers] = useState<User[]>([]);
+
+  const [facultyUsers, setFacultyUsers] =
+    useState<User[]>([]);
 
   useEffect(() => {
+    let active = true;
+
     async function loadComplaint() {
       setLoading(true);
       setAccessDenied(false);
       setComplaint(null);
 
+      /*
+       * Load the complaint
+       */
       const { data, error } = await supabase
         .from("complaints")
         .select("*")
         .eq("id", id)
         .single();
 
+      if (!active) return;
+
       if (error) {
         console.error(
           "Error loading complaint:",
-          error,
+          error
         );
 
         toast.error(
-          "Could not load this complaint",
+          "Could not load this complaint"
         );
 
         setLoading(false);
@@ -131,26 +132,59 @@ function ComplaintDetailPage() {
         return;
       }
 
-      const { data: facultyRows, error: facultyError } = await supabase
+      /*
+       * Load all faculty profiles.
+       *
+       * This is used only by admins for
+       * the assignment dropdown.
+       */
+      const {
+        data: facultyRows,
+        error: facultyError,
+      } = await supabase
         .from("profiles")
-        .select("id, name, full_name, email, role, department")
+        .select(
+          "id, name, full_name, email, role, department"
+        )
         .eq("role", "faculty");
 
-      if (!facultyError) {
-        setFacultyUsers(
-          (facultyRows ?? [])
-            .filter((row) => row.role === "faculty")
-            .map((row) => ({
-              id: row.id,
-              name: row.full_name ?? row.name ?? row.email?.split("@")[0] ?? "Faculty",
-              email: row.email ?? "",
-              role: "faculty",
-              department: row.department ?? "Faculty",
-              joinedAt: new Date().toISOString(),
-            })),
+      if (facultyError) {
+        console.error(
+          "Faculty loading error:",
+          facultyError
         );
+
+        setFacultyUsers([]);
+      } else {
+        const mappedFaculty: User[] = (
+          facultyRows ?? []
+        )
+          .filter(
+            (row) =>
+              row.role === "faculty"
+          )
+          .map((row) => ({
+            id: row.id,
+            name:
+              row.full_name ??
+              row.name ??
+              row.email?.split("@")[0] ??
+              "Faculty",
+            email: row.email ?? "",
+            role: "faculty",
+            department:
+              row.department ??
+              "Faculty",
+            joinedAt:
+              new Date().toISOString(),
+          }));
+
+        setFacultyUsers(mappedFaculty);
       }
 
+      /*
+       * Student can only see their own complaint.
+       */
       if (
         user?.role === "student" &&
         data.submitted_by !== user.id
@@ -160,6 +194,10 @@ function ComplaintDetailPage() {
         return;
       }
 
+      /*
+       * Faculty can only see complaints assigned
+       * to them.
+       */
       if (
         user?.role === "faculty" &&
         data.assigned_to !== user.id
@@ -209,10 +247,14 @@ function ComplaintDetailPage() {
           "",
 
         submittedByName:
+          data.submitted_by_name ??
           data.submitted_by ??
           "Student",
+
         anonymous:
-  data.anonymous ?? false,
+          data.anonymous ??
+          false,
+
         createdAt:
           data.created_at ??
           new Date().toISOString(),
@@ -253,24 +295,46 @@ function ComplaintDetailPage() {
           data.ai ??
           {
             category:
-              data.category ?? "Other",
+              data.category ??
+              "Other",
+
             priority:
-              data.priority ?? "Medium",
+              data.priority ??
+              "Medium",
+
             confidence: 0,
+
             summary:
               "AI analysis is not available yet.",
           },
       };
 
+      if (!active) return;
+
       setComplaint(mappedComplaint);
       setLoading(false);
     }
 
-    loadComplaint();
+    void loadComplaint();
+
+    return () => {
+      active = false;
+    };
   }, [id, user]);
 
+  /*
+   * -------------------------------------------------------
+   * ADD COMMENT
+   * -------------------------------------------------------
+   */
+
   async function submitComment() {
-    if (!comment.trim() || !user || !complaint || savingComment) {
+    if (
+      !comment.trim() ||
+      !user ||
+      !complaint ||
+      savingComment
+    ) {
       return;
     }
 
@@ -278,30 +342,42 @@ function ComplaintDetailPage() {
 
     const newComment = {
       id: `c-${Date.now()}`,
-      author: user.name ?? "User",
+      author:
+        user.name ??
+        "User",
       role: user.role,
-      message: comment.trim(),
-      createdAt: new Date().toISOString(),
+      message:
+        comment.trim(),
+      createdAt:
+        new Date().toISOString(),
     };
 
-    const updatedComments = [...(complaint.comments ?? []), newComment];
+    const updatedComments = [
+      ...(complaint.comments ?? []),
+      newComment,
+    ];
 
     const { error } = await supabase
       .from("complaints")
       .update({
-        comments: updatedComments,
-        updated_at: new Date().toISOString(),
+        comments:
+          updatedComments,
+        updated_at:
+          new Date().toISOString(),
       })
-      .eq("id", complaint.id);
+      .eq(
+        "id",
+        complaint.id
+      );
 
     if (error) {
       console.error(
         "Comment error:",
-        error,
+        error
       );
 
       toast.error(
-        "Could not save the comment",
+        `Could not save the comment: ${error.message}`
       );
 
       setSavingComment(false);
@@ -310,20 +386,40 @@ function ComplaintDetailPage() {
 
     setComplaint({
       ...complaint,
-      comments: updatedComments,
+      comments:
+        updatedComments,
     });
 
-    await addComment(complaint.id, newComment.message, newComment.author, newComment.role);
+    try {
+      await addComment(
+        complaint.id,
+        newComment.message,
+        newComment.author,
+        newComment.role
+      );
+    } catch (error) {
+      console.error(
+        "DataContext comment error:",
+        error
+      );
+    }
 
     setComment("");
-
     setSavingComment(false);
 
-    toast.success("Comment added");
+    toast.success(
+      "Comment added"
+    );
   }
 
+  /*
+   * -------------------------------------------------------
+   * CHANGE STATUS
+   * -------------------------------------------------------
+   */
+
   async function handleStatusChange(
-    value: string,
+    value: string
   ) {
     if (
       !complaint ||
@@ -337,33 +433,50 @@ function ComplaintDetailPage() {
 
     setSavingStatus(true);
 
+    const now =
+      new Date().toISOString();
+
     const newTimelineEvent = {
       id: `t-${Date.now()}`,
-      status: newStatus,
-      note: `Status updated to ${newStatus}`,
-      actor: user?.name ?? "Admin",
-      timestamp: new Date().toISOString(),
+      status:
+        newStatus,
+      note:
+        `Status updated to ${newStatus}`,
+      actor:
+        user?.name ??
+        "Admin",
+      timestamp:
+        now,
     };
 
-    const updatedTimeline = [...(complaint.timeline ?? []), newTimelineEvent];
+    const updatedTimeline = [
+      ...(complaint.timeline ?? []),
+      newTimelineEvent,
+    ];
 
     const { error } = await supabase
       .from("complaints")
       .update({
-        status: newStatus,
-        timeline: updatedTimeline,
-        updated_at: new Date().toISOString(),
+        status:
+          newStatus,
+        timeline:
+          updatedTimeline,
+        updated_at:
+          now,
       })
-      .eq("id", complaint.id);
+      .eq(
+        "id",
+        complaint.id
+      );
 
     if (error) {
       console.error(
         "Status error:",
-        error,
+        error
       );
 
       toast.error(
-        "Could not update the status",
+        `Could not update the status: ${error.message}`
       );
 
       setSavingStatus(false);
@@ -372,21 +485,41 @@ function ComplaintDetailPage() {
 
     setComplaint({
       ...complaint,
-      status: newStatus,
-      timeline: updatedTimeline,
+      status:
+        newStatus,
+      timeline:
+        updatedTimeline,
+      updatedAt:
+        now,
     });
 
-    await updateComplaintStatus(complaint.id, newStatus);
+    try {
+      await updateComplaintStatus(
+        complaint.id,
+        newStatus
+      );
+    } catch (error) {
+      console.error(
+        "DataContext status error:",
+        error
+      );
+    }
 
     setSavingStatus(false);
 
     toast.success(
-      `Status updated to ${newStatus}`,
+      `Status updated to ${newStatus}`
     );
   }
 
+  /*
+   * -------------------------------------------------------
+   * ASSIGN COMPLAINT TO FACULTY
+   * -------------------------------------------------------
+   */
+
   async function handleAssignment(
-    facultyId: string,
+    facultyId: string
   ) {
     if (
       !complaint ||
@@ -395,52 +528,133 @@ function ComplaintDetailPage() {
       return;
     }
 
+    const selectedFaculty =
+      facultyUsers.find(
+        (faculty) =>
+          faculty.id ===
+          facultyId
+      );
+
+    if (!selectedFaculty) {
+      toast.error(
+        "Faculty member not found."
+      );
+      return;
+    }
+
     setSavingAssignment(true);
 
-    const selectedFaculty = facultyUsers.find((u) => u.id === facultyId);
+    const now =
+      new Date().toISOString();
 
-    const { error } = await supabase
-      .from("complaints")
-      .update({
-        assigned_to: facultyId,
-        assigned_faculty_name: selectedFaculty?.name ?? null,
-        assigned_at: new Date().toISOString(),
-        department: selectedFaculty?.department ?? complaint.department,
-        status: "Assigned",
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", complaint.id);
+    /*
+     * IMPORTANT:
+     *
+     * We intentionally DO NOT send assigned_at
+     * because that column may not exist in the
+     * complaints table.
+     */
+    const { data, error } =
+      await supabase
+        .from("complaints")
+        .update({
+          assigned_to:
+            selectedFaculty.id,
+
+          assigned_faculty_name:
+            selectedFaculty.name,
+
+          department:
+            selectedFaculty.department ??
+            complaint.department,
+
+          status:
+            "Assigned",
+
+          updated_at:
+            now,
+        })
+        .eq(
+          "id",
+          complaint.id
+        )
+        .select()
+        .single();
 
     if (error) {
       console.error(
         "Assignment error:",
-        error,
+        error
       );
 
       toast.error(
-        "Could not save the assignment",
+        `Could not save the assignment: ${error.message}`
       );
 
       setSavingAssignment(false);
       return;
     }
 
+    if (!data) {
+      toast.error(
+        "Assignment was not saved."
+      );
+
+      setSavingAssignment(false);
+      return;
+    }
+
+    /*
+     * Update the screen immediately.
+     */
     setComplaint({
       ...complaint,
-      assignedTo: facultyId,
-      assignedFacultyName: selectedFaculty?.name,
-      department: selectedFaculty?.department ?? complaint.department,
-      status: "Assigned",
+
+      assignedTo:
+        selectedFaculty.id,
+
+      assignedFacultyName:
+        selectedFaculty.name,
+
+      department:
+        selectedFaculty.department ??
+        complaint.department,
+
+      status:
+        "Assigned",
+
+      updatedAt:
+        now,
     });
 
-    await assignComplaint(complaint.id, facultyId, selectedFaculty?.name);
+    /*
+     * Keep DataContext in sync too.
+     */
+    try {
+      await assignComplaint(
+        complaint.id,
+        selectedFaculty.id,
+        selectedFaculty.name
+      );
+    } catch (error) {
+      console.error(
+        "DataContext assignment error:",
+        error
+      );
+    }
 
     setSavingAssignment(false);
 
     toast.success(
-      `Assigned to ${selectedFaculty?.name ?? facultyId}`,
+      `Assigned to ${selectedFaculty.name}`
     );
   }
+
+  /*
+   * -------------------------------------------------------
+   * LOADING
+   * -------------------------------------------------------
+   */
 
   if (loading) {
     return (
@@ -450,19 +664,41 @@ function ComplaintDetailPage() {
     );
   }
 
+  /*
+   * -------------------------------------------------------
+   * ACCESS DENIED
+   * -------------------------------------------------------
+   */
+
   if (accessDenied) {
     return (
       <div className="mx-auto max-w-2xl py-16 text-center">
-        <h2 className="text-xl font-semibold">Access denied</h2>
+        <h2 className="text-xl font-semibold">
+          Access denied
+        </h2>
+
         <p className="mt-2 text-sm text-muted-foreground">
-          You do not have permission to view this complaint.
+          You do not have permission to
+          view this complaint.
         </p>
-        <Button asChild className="mt-4">
-          <Link to="/app/complaints">Back to complaints</Link>
+
+        <Button
+          asChild
+          className="mt-4"
+        >
+          <Link to="/app/complaints">
+            Back to complaints
+          </Link>
         </Button>
       </div>
     );
   }
+
+  /*
+   * -------------------------------------------------------
+   * COMPLAINT NOT FOUND
+   * -------------------------------------------------------
+   */
 
   if (!complaint) {
     return (
@@ -487,6 +723,12 @@ function ComplaintDetailPage() {
       </div>
     );
   }
+
+  /*
+   * -------------------------------------------------------
+   * PAGE
+   * -------------------------------------------------------
+   */
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -552,9 +794,7 @@ function ComplaintDetailPage() {
 
             <dl className="mt-5 grid grid-cols-2 gap-4 border-t border-border pt-5 text-sm sm:grid-cols-4">
               <Meta
-                icon={
-                  Building2
-                }
+                icon={Building2}
                 label="Building"
                 value={
                   complaint.building
@@ -562,9 +802,7 @@ function ComplaintDetailPage() {
               />
 
               <Meta
-                icon={
-                  MapPin
-                }
+                icon={MapPin}
                 label="Location"
                 value={
                   complaint.location
@@ -572,9 +810,7 @@ function ComplaintDetailPage() {
               />
 
               <Meta
-                icon={
-                  UserIcon
-                }
+                icon={UserIcon}
                 label="Department"
                 value={
                   complaint.department
@@ -582,38 +818,33 @@ function ComplaintDetailPage() {
               />
 
               <Meta
-                icon={
-                  Calendar
-                }
+                icon={Calendar}
                 label="Submitted"
                 value={new Date(
-                  complaint.createdAt,
+                  complaint.createdAt
                 ).toLocaleDateString()}
               />
             </dl>
 
-            {complaint.images
-              ?.length > 0 && (
+            {complaint.images?.length >
+              0 && (
               <div className="mt-5 grid grid-cols-4 gap-2 border-t border-border pt-5">
                 {complaint.images.map(
                   (
                     src,
-                    index,
+                    index
                   ) => (
                     <img
                       key={
                         index
                       }
-                      src={
-                        src
-                      }
+                      src={src}
                       alt={`Complaint attachment ${
-                        index +
-                        1
+                        index + 1
                       }`}
                       className="aspect-square w-full rounded-lg border border-border object-cover"
                     />
-                  ),
+                  )
                 )}
               </div>
             )}
@@ -624,8 +855,8 @@ function ComplaintDetailPage() {
               Timeline
             </h2>
 
-            {complaint.timeline
-              ?.length > 0 ? (
+            {complaint.timeline?.length >
+            0 ? (
               <ComplaintTimeline
                 events={
                   complaint.timeline
@@ -644,15 +875,15 @@ function ComplaintDetailPage() {
             </h2>
 
             <div className="mt-4 space-y-4">
-              {complaint.comments
-                ?.length === 0 ? (
+              {complaint.comments?.length ===
+              0 ? (
                 <p className="text-sm text-muted-foreground">
                   No comments yet.
                 </p>
               ) : (
                 complaint.comments?.map(
                   (
-                    currentComment,
+                    currentComment
                   ) => (
                     <div
                       key={
@@ -663,22 +894,18 @@ function ComplaintDetailPage() {
                       <Avatar className="h-8 w-8">
                         <AvatarFallback className="bg-primary/10 text-xs text-primary">
                           {currentComment.author
-                            .split(
-                              " ",
-                            )
+                            .split(" ")
                             .map(
                               (
-                                word,
+                                word
                               ) =>
-                                word[0],
+                                word[0]
                             )
                             .slice(
                               0,
-                              2,
+                              2
                             )
-                            .join(
-                              "",
-                            )}
+                            .join("")}
                         </AvatarFallback>
                       </Avatar>
 
@@ -698,7 +925,7 @@ function ComplaintDetailPage() {
 
                           <span className="text-muted-foreground">
                             {new Date(
-                              currentComment.createdAt,
+                              currentComment.createdAt
                             ).toLocaleString()}
                           </span>
                         </div>
@@ -710,7 +937,7 @@ function ComplaintDetailPage() {
                         </p>
                       </div>
                     </div>
-                  ),
+                  )
                 )
               )}
             </div>
@@ -721,12 +948,11 @@ function ComplaintDetailPage() {
                   comment
                 }
                 onChange={(
-                  event,
+                  event
                 ) =>
                   setComment(
-                    event
-                      .target
-                      .value,
+                    event.target
+                      .value
                   )
                 }
                 placeholder="Add a comment..."
@@ -764,13 +990,15 @@ function ComplaintDetailPage() {
             }
           />
 
-          {(user?.role === "admin" || user?.role === "faculty") && (
+          {(user?.role === "admin" ||
+            user?.role === "faculty") && (
             <Card className="p-6">
               <h3 className="text-sm font-semibold">
                 Actions
               </h3>
 
               <div className="mt-4 space-y-4">
+                {/* STATUS */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-muted-foreground">
                     Status
@@ -794,7 +1022,7 @@ function ComplaintDetailPage() {
                     <SelectContent>
                       {STATUSES.map(
                         (
-                          status,
+                          status
                         ) => (
                           <SelectItem
                             key={
@@ -808,37 +1036,79 @@ function ComplaintDetailPage() {
                               status
                             }
                           </SelectItem>
-                        ),
+                        )
                       )}
                     </SelectContent>
                   </Select>
                 </div>
 
-                {user?.role === "admin" ? (
+                {/* FACULTY ASSIGNMENT */}
+                {user?.role ===
+                  "admin" && (
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-muted-foreground">
                       Assign to
                     </label>
 
                     <Select
-                      value={complaint.assignedTo ?? ""}
-                      onValueChange={handleAssignment}
-                      disabled={savingAssignment}
+                      value={
+                        complaint.assignedTo ??
+                        ""
+                      }
+                      onValueChange={
+                        handleAssignment
+                      }
+                      disabled={
+                        savingAssignment ||
+                        facultyUsers.length ===
+                          0
+                      }
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder={facultyUsers.length > 0 ? "Select faculty" : "No faculty accounts found"} />
+                        <SelectValue
+                          placeholder={
+                            facultyUsers.length >
+                            0
+                              ? "Select faculty"
+                              : "No faculty accounts found"
+                          }
+                        />
                       </SelectTrigger>
 
                       <SelectContent>
-                        {facultyUsers.map((faculty) => (
-                          <SelectItem key={faculty.id} value={faculty.id}>
-                            {faculty.name} · {faculty.department}
-                          </SelectItem>
-                        ))}
+                        {facultyUsers.map(
+                          (
+                            faculty
+                          ) => (
+                            <SelectItem
+                              key={
+                                faculty.id
+                              }
+                              value={
+                                faculty.id
+                              }
+                            >
+                              {
+                                faculty.name
+                              }{" "}
+                              ·{" "}
+                              {
+                                faculty.department
+                              }
+                            </SelectItem>
+                          )
+                        )}
                       </SelectContent>
                     </Select>
+
+                    {savingAssignment && (
+                      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        Saving assignment...
+                      </p>
+                    )}
                   </div>
-                ) : null}
+                )}
 
                 {complaint.adminNotes && (
                   <div className="rounded-lg border border-border bg-muted/40 p-3 text-xs">
