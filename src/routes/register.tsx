@@ -75,7 +75,7 @@ return ( <AuthShell
    subtitle="Join CampusPulse and start resolving campus issues."
  > <form onSubmit={onSubmit} className="space-y-4"> <div className="space-y-2"> <Label htmlFor="name">Full name</Label>
 
-```
+
       <Input
         id="name"
         type="text"

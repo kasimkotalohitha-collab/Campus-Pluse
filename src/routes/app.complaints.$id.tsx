@@ -7,7 +7,7 @@ import {
   Loader2,
   MapPin,
   Send,
-  User,
+  User as UserIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -46,6 +46,7 @@ import { supabase } from "@/lib/supabase";
 import type {
   Complaint,
   ComplaintStatus,
+  User,
 } from "@/types";
 
 export const Route = createFileRoute(
@@ -69,7 +70,6 @@ function ComplaintDetailPage() {
   });
 
   const {
-    departments,
     users,
     updateComplaintStatus,
     addComment,
@@ -98,6 +98,7 @@ function ComplaintDetailPage() {
 
   const [savingAssignment, setSavingAssignment] =
     useState(false);
+  const [facultyUsers, setFacultyUsers] = useState<User[]>([]);
 
   useEffect(() => {
     async function loadComplaint() {
@@ -128,6 +129,26 @@ function ComplaintDetailPage() {
       if (!data) {
         setLoading(false);
         return;
+      }
+
+      const { data: facultyRows, error: facultyError } = await supabase
+        .from("profiles")
+        .select("id, name, full_name, email, role, department")
+        .eq("role", "faculty");
+
+      if (!facultyError) {
+        setFacultyUsers(
+          (facultyRows ?? [])
+            .filter((row) => row.role === "faculty")
+            .map((row) => ({
+              id: row.id,
+              name: row.full_name ?? row.name ?? row.email?.split("@")[0] ?? "Faculty",
+              email: row.email ?? "",
+              role: "faculty",
+              department: row.department ?? "Faculty",
+              joinedAt: new Date().toISOString(),
+            })),
+        );
       }
 
       if (
@@ -249,12 +270,7 @@ function ComplaintDetailPage() {
   }, [id, user]);
 
   async function submitComment() {
-    if (
-      !comment.trim() ||
-      !user ||
-      !complaint ||
-      savingComment
-    ) {
+    if (!comment.trim() || !user || !complaint || savingComment) {
       return;
     }
 
@@ -262,39 +278,21 @@ function ComplaintDetailPage() {
 
     const newComment = {
       id: `c-${Date.now()}`,
-
-      author:
-        user.name ??
-        "User",
-
-      role:
-        user.role,
-
-      message:
-        comment.trim(),
-
-      createdAt:
-        new Date().toISOString(),
+      author: user.name ?? "User",
+      role: user.role,
+      message: comment.trim(),
+      createdAt: new Date().toISOString(),
     };
 
-    const updatedComments = [
-      ...(complaint.comments ?? []),
-      newComment,
-    ];
+    const updatedComments = [...(complaint.comments ?? []), newComment];
 
     const { error } = await supabase
       .from("complaints")
       .update({
-        comments:
-          updatedComments,
-
-        updated_at:
-          new Date().toISOString(),
+        comments: updatedComments,
+        updated_at: new Date().toISOString(),
       })
-      .eq(
-        "id",
-        complaint.id,
-      );
+      .eq("id", complaint.id);
 
     if (error) {
       console.error(
@@ -312,25 +310,16 @@ function ComplaintDetailPage() {
 
     setComplaint({
       ...complaint,
-
-      comments:
-        updatedComments,
+      comments: updatedComments,
     });
 
-    addComment(
-      complaint.id,
-      newComment.message,
-      newComment.author,
-      newComment.role,
-    );
+    await addComment(complaint.id, newComment.message, newComment.author, newComment.role);
 
     setComment("");
 
     setSavingComment(false);
 
-    toast.success(
-      "Comment added",
-    );
+    toast.success("Comment added");
   }
 
   async function handleStatusChange(
@@ -350,42 +339,22 @@ function ComplaintDetailPage() {
 
     const newTimelineEvent = {
       id: `t-${Date.now()}`,
-
-      status:
-        newStatus,
-
-      note:
-        `Status updated to ${newStatus}`,
-
-      actor:
-        user?.name ??
-        "Admin",
-
-      timestamp:
-        new Date().toISOString(),
+      status: newStatus,
+      note: `Status updated to ${newStatus}`,
+      actor: user?.name ?? "Admin",
+      timestamp: new Date().toISOString(),
     };
 
-    const updatedTimeline = [
-      ...(complaint.timeline ?? []),
-      newTimelineEvent,
-    ];
+    const updatedTimeline = [...(complaint.timeline ?? []), newTimelineEvent];
 
     const { error } = await supabase
       .from("complaints")
       .update({
-        status:
-          newStatus,
-
-        timeline:
-          updatedTimeline,
-
-        updated_at:
-          new Date().toISOString(),
+        status: newStatus,
+        timeline: updatedTimeline,
+        updated_at: new Date().toISOString(),
       })
-      .eq(
-        "id",
-        complaint.id,
-      );
+      .eq("id", complaint.id);
 
     if (error) {
       console.error(
@@ -403,18 +372,11 @@ function ComplaintDetailPage() {
 
     setComplaint({
       ...complaint,
-
-      status:
-        newStatus,
-
-      timeline:
-        updatedTimeline,
+      status: newStatus,
+      timeline: updatedTimeline,
     });
 
-    updateComplaintStatus(
-      complaint.id,
-      newStatus,
-    );
+    await updateComplaintStatus(complaint.id, newStatus);
 
     setSavingStatus(false);
 
@@ -435,36 +397,19 @@ function ComplaintDetailPage() {
 
     setSavingAssignment(true);
 
-    const selectedFaculty =
-      users.find(
-        (u) =>
-          u.id === facultyId &&
-          u.role === "faculty",
-      );
+    const selectedFaculty = facultyUsers.find((u) => u.id === facultyId);
 
     const { error } = await supabase
       .from("complaints")
       .update({
-        assigned_to:
-          facultyId,
-
-        assigned_faculty_name:
-          selectedFaculty?.name,
-
-        department:
-          selectedFaculty?.department ??
-          complaint.department,
-
-        status:
-          "Assigned",
-
-        updated_at:
-          new Date().toISOString(),
+        assigned_to: facultyId,
+        assigned_faculty_name: selectedFaculty?.name ?? null,
+        assigned_at: new Date().toISOString(),
+        department: selectedFaculty?.department ?? complaint.department,
+        status: "Assigned",
+        updated_at: new Date().toISOString(),
       })
-      .eq(
-        "id",
-        complaint.id,
-      );
+      .eq("id", complaint.id);
 
     if (error) {
       console.error(
@@ -482,25 +427,13 @@ function ComplaintDetailPage() {
 
     setComplaint({
       ...complaint,
-
-      assignedTo:
-        facultyId,
-
-      assignedFacultyName:
-        selectedFaculty?.name,
-
-      department:
-        selectedFaculty?.department ??
-        complaint.department,
-
-      status:
-        "Assigned",
+      assignedTo: facultyId,
+      assignedFacultyName: selectedFaculty?.name,
+      department: selectedFaculty?.department ?? complaint.department,
+      status: "Assigned",
     });
 
-    assignComplaint(
-      complaint.id,
-      facultyId,
-    );
+    await assignComplaint(complaint.id, facultyId, selectedFaculty?.name);
 
     setSavingAssignment(false);
 
@@ -640,7 +573,7 @@ function ComplaintDetailPage() {
 
               <Meta
                 icon={
-                  User
+                  UserIcon
                 }
                 label="Department"
                 value={
@@ -888,50 +821,20 @@ function ComplaintDetailPage() {
                     </label>
 
                     <Select
-                      value={
-                        complaint.assignedTo ??
-                        ""
-                      }
-                      onValueChange={
-                        handleAssignment
-                      }
-                      disabled={
-                        savingAssignment
-                      }
+                      value={complaint.assignedTo ?? ""}
+                      onValueChange={handleAssignment}
+                      disabled={savingAssignment}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Select faculty" />
+                        <SelectValue placeholder={facultyUsers.length > 0 ? "Select faculty" : "No faculty accounts found"} />
                       </SelectTrigger>
 
                       <SelectContent>
-                        {users
-                          .filter(
-                            (u) =>
-                              u.role ===
-                              "faculty",
-                          )
-                          .map(
-                            (
-                              faculty,
-                            ) => (
-                              <SelectItem
-                                key={
-                                  faculty.id
-                                }
-                                value={
-                                  faculty.id
-                                }
-                              >
-                                {
-                                  faculty.name
-                                }
-                                {" · "}
-                                {
-                                  faculty.department
-                                }
-                              </SelectItem>
-                            ),
-                          )}
+                        {facultyUsers.map((faculty) => (
+                          <SelectItem key={faculty.id} value={faculty.id}>
+                            {faculty.name} · {faculty.department}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>

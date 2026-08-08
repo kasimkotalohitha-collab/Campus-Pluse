@@ -47,36 +47,38 @@ const [remember, setRemember] = useState(true);
 const [loading, setLoading] = useState(false);
 
 async function onSubmit(event: FormEvent<HTMLFormElement>) {
-event.preventDefault();
+  event.preventDefault();
 
+  if (!email.trim() || !password) {
+    toast.error("Please enter your email and password.");
+    return;
+  }
 
-if (!email.trim() || !password) {
-  toast.error("Please enter your email and password.");
-  return;
-}
+  setLoading(true);
 
-setLoading(true);
+  try {
+    const loggedInUser = await login(email.trim(), password);
 
-try {
-  const loggedInUser = await login(email.trim(), password);
+    toast.success(`Welcome back, ${loggedInUser.name}!`);
 
-  toast.success(`Welcome back, ${loggedInUser.name}!`);
+    const destination =
+      loggedInUser.role === "admin"
+        ? "/app/dashboard"
+        : loggedInUser.role === "faculty"
+          ? "/app/dashboard"
+          : "/app/dashboard";
 
-  navigate({
-    to: "/app/dashboard",
-  });
-} catch (error) {
-  const message =
-    error instanceof Error
-      ? error.message
-      : "Unable to sign in. Please check your email and password.";
+    navigate({ to: destination });
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Unable to sign in. Please check your email and password.";
 
-  toast.error(message);
-} finally {
-  setLoading(false);
-}
-
-
+    toast.error(message);
+  } finally {
+    setLoading(false);
+  }
 }
 
 return ( <AuthShell
