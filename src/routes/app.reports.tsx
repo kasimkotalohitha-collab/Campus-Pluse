@@ -14,10 +14,87 @@ function ReportsPage() {
   const { complaints, departments } = useData();
 
   const stats = useMemo(() => {
+    const total = complaints.length;
     const resolved = complaints.filter((c) => c.status === "Resolved").length;
-    const pending = complaints.length - resolved;
-    const avgResolutionDays = 2.3;
-    return { resolved, pending, avgResolutionDays };
+    const unresolved = complaints.filter(
+      (c) => c.status !== "Resolved" && c.status !== "Rejected"
+    ).length;
+    const open = complaints.filter(
+      (c) => c.status !== "Resolved" && c.status !== "Rejected"
+    ).length;
+    const resolvedComplaints = complaints.filter((c) => c.status === "Resolved");
+    const avgResolutionDays =
+      resolvedComplaints.length > 0
+        ? Math.round(
+            resolvedComplaints.reduce((sum, complaint) => {
+              const created = new Date(complaint.createdAt).getTime();
+              const resolvedAt = new Date(complaint.updatedAt).getTime();
+              return sum + Math.max(0, resolvedAt - created);
+            }, 0) /
+              resolvedComplaints.length /
+              (1000 * 60 * 60 * 24)
+          )
+        : 0;
+
+    return {
+      total,
+      resolved,
+      pending: unresolved,
+      avgResolutionDays,
+      open,
+    };
+  }, [complaints]);
+
+  const countsByDepartment = useMemo(() => {
+    const count = new Map<string, number>();
+
+    complaints.forEach((complaint) => {
+      const department = complaint.department ?? "General Admin";
+      count.set(department, (count.get(department) ?? 0) + 1);
+    });
+
+    return Array.from(count, ([name, value]) => ({ name, value })).sort(
+      (a, b) => b.value - a.value
+    );
+  }, [complaints]);
+
+  const countsByCategory = useMemo(() => {
+    const count = new Map<string, number>();
+
+    complaints.forEach((complaint) => {
+      const category = complaint.category ?? "Other";
+      count.set(category, (count.get(category) ?? 0) + 1);
+    });
+
+    return Array.from(count, ([name, value]) => ({ name, value })).sort(
+      (a, b) => b.value - a.value
+    );
+  }, [complaints]);
+
+  const countsByStatus = useMemo(() => {
+    const count = new Map<string, number>();
+
+    complaints.forEach((complaint) => {
+      const status = complaint.status ?? "Submitted";
+      count.set(status, (count.get(status) ?? 0) + 1);
+    });
+
+    return Array.from(count, ([name, value]) => ({ name, value })).sort(
+      (a, b) => b.value - a.value
+    );
+  }, [complaints]);
+
+  const countsByPriority = useMemo(() => {
+    const count = new Map<string, number>();
+
+    complaints.forEach((complaint) => {
+      const priority = complaint.urgency ?? "Medium";
+      count.set(priority, (count.get(priority) ?? 0) + 1);
+    });
+
+    return Array.from(count, ([name, value]) => ({ name, value })).sort(
+      (a, b) => b.value - a.value
+    );
   }, [complaints]);
 
   function downloadCSV() {
@@ -94,12 +171,15 @@ function ReportsPage() {
       <Card className="p-6">
         <h2 className="text-sm font-semibold">Snapshot</h2>
         <div className="mt-4 grid gap-4 sm:grid-cols-3">
-          <Metric label="Total" value={complaints.length} />
+          <Metric label="Total" value={stats.total} />
           <Metric label="Resolved" value={stats.resolved} />
           <Metric label="Pending" value={stats.pending} />
           <Metric label="Avg. resolution" value={`${stats.avgResolutionDays}d`} />
           <Metric label="Departments" value={departments.length} />
-          <Metric label="Resolution rate" value={`${Math.round((stats.resolved / complaints.length) * 100)}%`} />
+          <Metric
+            label="Resolution rate"
+            value={`${complaints.length > 0 ? Math.round((stats.resolved / complaints.length) * 100) : 0}%`}
+          />
         </div>
       </Card>
 
@@ -126,6 +206,56 @@ function ReportsPage() {
           ))}
         </div>
       </Card>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card className="p-6">
+          <h2 className="mb-4 text-sm font-semibold">Complaints by department</h2>
+          <div className="space-y-2">
+            {countsByDepartment.map((item) => (
+              <div key={item.name} className="flex items-center justify-between rounded-lg border border-border p-3">
+                <span>{item.name}</span>
+                <span className="text-sm font-semibold">{item.value}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        <Card className="p-6">
+          <h2 className="mb-4 text-sm font-semibold">Complaints by category</h2>
+          <div className="space-y-2">
+            {countsByCategory.map((item) => (
+              <div key={item.name} className="flex items-center justify-between rounded-lg border border-border p-3">
+                <span>{item.name}</span>
+                <span className="text-sm font-semibold">{item.value}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        <Card className="p-6">
+          <h2 className="mb-4 text-sm font-semibold">Complaints by status</h2>
+          <div className="space-y-2">
+            {countsByStatus.map((item) => (
+              <div key={item.name} className="flex items-center justify-between rounded-lg border border-border p-3">
+                <span>{item.name}</span>
+                <span className="text-sm font-semibold">{item.value}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        <Card className="p-6">
+          <h2 className="mb-4 text-sm font-semibold">Complaints by priority</h2>
+          <div className="space-y-2">
+            {countsByPriority.map((item) => (
+              <div key={item.name} className="flex items-center justify-between rounded-lg border border-border p-3">
+                <span>{item.name}</span>
+                <span className="text-sm font-semibold">{item.value}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
     </div>
   );
 }

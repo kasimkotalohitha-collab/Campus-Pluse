@@ -100,6 +100,62 @@ type ProfileRow = {
   avatar?: string;
 };
 
+function normalizeRoleValue(value: unknown): Role | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim().toLowerCase();
+
+  if (normalized === "admin") return "admin";
+  if (normalized === "faculty") return "faculty";
+  if (normalized === "student") return "student";
+
+  return null;
+}
+
+function buildUserFromProfile(
+  profile: ProfileRow
+): User {
+  const role = normalizeRoleValue(profile.role) ?? "student";
+
+  return {
+    id: profile.id,
+
+    name:
+      profile.full_name ??
+      profile.name ??
+      profile.email?.split("@")[0] ??
+      "CampusPulse User",
+
+    email:
+      profile.email ?? "",
+
+    role,
+
+    department:
+      profile.department ??
+      (role === "admin"
+        ? "Campus Operations"
+        : role === "faculty"
+          ? "Faculty"
+          : "Computer Science"),
+
+    studentId:
+      profile.student_id,
+
+    phone:
+      profile.phone,
+
+    joinedAt:
+      profile.joined_at ??
+      new Date().toISOString(),
+
+    avatar:
+      profile.avatar,
+  };
+}
+
 /* ---------------------------------------------------------
    COMPLAINT MAPPER
 --------------------------------------------------------- */
@@ -214,60 +270,6 @@ function mapComplaint(
 }
 
 /* ---------------------------------------------------------
-   PROFILE -> USER
---------------------------------------------------------- */
-
-function buildUserFromProfile(
-  profile: ProfileRow
-): User {
-  let role: Role = "student";
-
-  if (profile.role === "admin") {
-    role = "admin";
-  } else if (profile.role === "faculty") {
-    role = "faculty";
-  } else if (profile.role === "student") {
-    role = "student";
-  }
-
-  return {
-    id: profile.id,
-
-    name:
-      profile.full_name ??
-      profile.name ??
-      profile.email?.split("@")[0] ??
-      "CampusPulse User",
-
-    email:
-      profile.email ?? "",
-
-    role,
-
-    department:
-      profile.department ??
-      (role === "admin"
-        ? "Campus Operations"
-        : role === "faculty"
-          ? "Faculty"
-          : "Computer Science"),
-
-    studentId:
-      profile.student_id,
-
-    phone:
-      profile.phone,
-
-    joinedAt:
-      profile.joined_at ??
-      new Date().toISOString(),
-
-    avatar:
-      profile.avatar,
-  };
-}
-
-/* ---------------------------------------------------------
    NOTIFICATIONS
 --------------------------------------------------------- */
 
@@ -329,6 +331,63 @@ export function DataProvider({
 
   const [isLoading, setIsLoading] =
     useState(true);
+
+  function buildDepartments(
+    complaints: Complaint[],
+    users: User[]
+  ): Department[] {
+    const names = new Set<string>();
+
+    complaints.forEach((complaint) => {
+      names.add(
+        complaint.department ??
+          "General Admin"
+      );
+    });
+
+    users.forEach((user) => {
+      names.add(
+        user.department ??
+          "General Admin"
+      );
+    });
+
+    const departments = Array.from(names)
+      .sort((a, b) =>
+        a.localeCompare(b)
+      )
+      .map((name) => {
+        const workload = complaints.filter(
+          (complaint) =>
+            (complaint.department ??
+              "General Admin") ===
+              name &&
+            complaint.status !==
+              "Resolved" &&
+            complaint.status !==
+              "Rejected"
+        ).length;
+
+        const resolved = complaints.filter(
+          (complaint) =>
+            (complaint.department ??
+              "General Admin") ===
+              name &&
+            complaint.status ===
+              "Resolved"
+        ).length;
+
+        return {
+          id: name,
+          name,
+          head: name,
+          workload,
+          resolved,
+        };
+      });
+
+    return departments;
+  }
 
   /* -------------------------------------------------------
      LOAD DATA
@@ -404,35 +463,50 @@ export function DataProvider({
           );
         }
 
-        /* -----------------------------------------------
-           USERS
-        ------------------------------------------------ */
+        let complaintRows =
+          (complaintsResult.data ??
+            []) as ComplaintRow[];
+
+        let profileRows =
+          (profilesResult.data ??
+            []) as ProfileRow[];
+
+        let mappedUsers: User[] = [];
+
+        if (
+          complaintsResult.error
+        ) {
+          console.error(
+            "Error fetching complaints:",
+            complaintsResult.error
+          );
+
+          complaintRows = [];
+          setComplaints([]);
+        } else {
+          setComplaints(
+            complaintRows.map(mapComplaint)
+          );
+        }
 
         if (
           profilesResult.error
         ) {
-          /*
-           * IMPORTANT:
-           * Don't silently hide this error.
-           */
           console.error(
             "ERROR FETCHING PROFILES:",
             profilesResult.error
           );
 
+          profileRows = [];
           setUsers([]);
         } else {
-          const rows =
-            (profilesResult.data ??
-              []) as ProfileRow[];
-
           console.log(
             "CampusPulse profiles loaded:",
-            rows
+            profileRows
           );
 
-          const mappedUsers =
-            rows.map(
+          mappedUsers =
+            profileRows.map(
               buildUserFromProfile
             );
 
@@ -444,51 +518,10 @@ export function DataProvider({
           setUsers(mappedUsers);
         }
 
-        /* -----------------------------------------------
-           DEPARTMENTS
-        ------------------------------------------------ */
-
-        const complaintDepartments =
-          (
-            (complaintsResult.data ??
-              []) as ComplaintRow[]
-          ).map(
-            (row) =>
-              row.department ??
-              "General Admin"
-          );
-
-        const profileDepartments =
-          (
-            (profilesResult.data ??
-              []) as ProfileRow[]
-          ).map(
-            (row) =>
-              row.department ??
-              "General Admin"
-          );
-
-        const allDepartments = [
-          ...complaintDepartments,
-          ...profileDepartments,
-        ];
-
-        const uniqueDepartments =
-          Array.from(
-            new Set(
-              allDepartments
-            )
-          );
-
         setDepartments(
-          uniqueDepartments.map(
-            (name) => ({
-              id: name,
-              name,
-              head: name,
-              workload: 0,
-              resolved: 0,
-            })
+          buildDepartments(
+            complaintRows.map(mapComplaint),
+            mappedUsers
           )
         );
       } catch (error) {
@@ -629,6 +662,15 @@ export function DataProvider({
       );
     };
   }, []);
+
+  useEffect(() => {
+    setDepartments(
+      buildDepartments(
+        complaints,
+        users
+      )
+    );
+  }, [complaints, users]);
 
   /* -------------------------------------------------------
      CONTEXT VALUE

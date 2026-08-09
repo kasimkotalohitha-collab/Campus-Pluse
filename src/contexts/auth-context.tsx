@@ -63,9 +63,15 @@ type SupabaseAuthUser = {
 --------------------------------------------------------- */
 
 function normalizeRole(value: unknown): Role | null {
-  if (value === "admin") return "admin";
-  if (value === "faculty") return "faculty";
-  if (value === "student") return "student";
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim().toLowerCase();
+
+  if (normalized === "admin") return "admin";
+  if (normalized === "faculty") return "faculty";
+  if (normalized === "student") return "student";
 
   return null;
 }
